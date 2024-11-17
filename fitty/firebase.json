@@ -1,0 +1,45 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "fittymobile-2edfa",
+          "appId": "1:1067730549731:android:27c539c48af387d7afbed6",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "fittymobile-2edfa",
+          "appId": "1:1067730549731:ios:e8b89c0978eb847bafbed6",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "macos": {
+        "default": {
+          "projectId": "fittymobile-2edfa",
+          "appId": "1:1067730549731:ios:e8b89c0978eb847bafbed6",
+          "uploadDebugSymbols": false,
+          "fileOutput": "macos/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "fittymobile-2edfa",
+          "configurations": {
+            "android": "1:1067730549731:android:27c539c48af387d7afbed6",
+            "ios": "1:1067730549731:ios:e8b89c0978eb847bafbed6",
+            "macos": "1:1067730549731:ios:e8b89c0978eb847bafbed6",
+            "web": "1:1067730549731:web:c7f2174906427e30afbed6",
+            "windows": "1:1067730549731:web:5cdc8ebf0460d919afbed6"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}
