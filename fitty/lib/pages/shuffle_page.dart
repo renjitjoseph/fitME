@@ -6,6 +6,8 @@ import '../providers/wardrobe_provider.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
 
 class ShufflePage extends StatefulWidget {
   @override
@@ -20,7 +22,8 @@ class _ShufflePageState extends State<ShufflePage> {
   bool isShuffling = false;
 
   Future<Map<String, dynamic>?> fetchCategoryItems(String category) async {
-    final wardrobeProvider = Provider.of<WardrobeProvider>(context, listen: false);
+    final wardrobeProvider =
+        Provider.of<WardrobeProvider>(context, listen: false);
     final items = wardrobeProvider.wardrobeItems[category];
     if (items != null && items.isNotEmpty) {
       final randomIndex = DateTime.now().millisecondsSinceEpoch % items.length;
@@ -37,13 +40,16 @@ class _ShufflePageState extends State<ShufflePage> {
 
     final Map<String, dynamic> newItems = {};
     for (final category in categories) {
-      if (!Provider.of<ShuffleProvider>(context, listen: false).locks[category]!) {
+      if (!Provider.of<ShuffleProvider>(context, listen: false)
+          .locks[category]!) {
         newItems[category] = await fetchCategoryItems(category);
       } else {
-        newItems[category] = Provider.of<ShuffleProvider>(context, listen: false).outfitItems[category];
+        newItems[category] = Provider.of<ShuffleProvider>(context, listen: false)
+            .outfitItems[category];
       }
     }
-    Provider.of<ShuffleProvider>(context, listen: false).updateOutfitItems(newItems);
+    Provider.of<ShuffleProvider>(context, listen: false)
+        .updateOutfitItems(newItems);
 
     setState(() {
       isShuffling = false;
@@ -51,12 +57,53 @@ class _ShufflePageState extends State<ShufflePage> {
   }
 
   Future<void> saveToFavorites() async {
-    final outfitItems = Provider.of<ShuffleProvider>(context, listen: false).outfitItems;
+    final outfitItems =
+        Provider.of<ShuffleProvider>(context, listen: false).outfitItems;
 
+    // Step 1: Fetch images from network
+    List<img.Image> images = [];
+    for (String category in categories) {
+      final item = outfitItems[category];
+      if (item != null) {
+        final imageUrl = 'https://gateway.pinata.cloud/ipfs/${item['cid']}';
+        final response = await http.get(Uri.parse(imageUrl));
+        if (response.statusCode == 200) {
+          final image = img.decodeImage(response.bodyBytes);
+          if (image != null) {
+            images.add(image);
+          }
+        }
+      }
+    }
+
+    // Step 2: Combine images into one
+    img.Image? combinedImage;
+    if (images.isNotEmpty) {
+      // For simplicity, stack images vertically
+      int width = images.map((e) => e.width).reduce((a, b) => a > b ? a : b);
+      int height = images.map((e) => e.height).reduce((a, b) => a + b);
+
+      combinedImage = img.Image(width, height);
+      int yOffset = 0;
+      for (var image in images) {
+        img.copyInto(combinedImage, image, blend: false, dstY: yOffset);
+        yOffset += image.height;
+      }
+    }
+
+    // Step 3: Convert combined image to PNG
+    String? combinedImageBase64;
+    if (combinedImage != null) {
+      final pngBytes = img.encodePng(combinedImage);
+      combinedImageBase64 = base64Encode(pngBytes);
+    }
+
+    // Step 4: Save to favorites
     Map<String, dynamic> favoriteItem = {
       'name': favoriteName.isNotEmpty ? favoriteName : 'Favorite',
       'dateSaved': DateTime.now().toIso8601String(),
       'outfitItems': outfitItems,
+      'combinedImage': combinedImageBase64,
     };
 
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -80,7 +127,8 @@ class _ShufflePageState extends State<ShufflePage> {
   }
 
   void unlockAllCategories() {
-    final shuffleProvider = Provider.of<ShuffleProvider>(context, listen: false);
+    final shuffleProvider =
+        Provider.of<ShuffleProvider>(context, listen: false);
     for (final category in categories) {
       if (shuffleProvider.locks[category] == true) {
         shuffleProvider.toggleLock(category);
@@ -123,7 +171,8 @@ class _ShufflePageState extends State<ShufflePage> {
                     icon: Icon(isLocked ? Icons.lock : Icons.lock_open),
                     color: Colors.black,
                     onPressed: () {
-                      Provider.of<ShuffleProvider>(context, listen: false).toggleLock(category);
+                      Provider.of<ShuffleProvider>(context, listen: false)
+                          .toggleLock(category);
                     },
                   ),
                 ),
@@ -161,7 +210,9 @@ class _ShufflePageState extends State<ShufflePage> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.center,
-                          children: categories.map((category) => buildCategory(category)).toList(),
+                          children: categories
+                              .map((category) => buildCategory(category))
+                              .toList(),
                         ),
                       ),
                     ),
@@ -172,7 +223,8 @@ class _ShufflePageState extends State<ShufflePage> {
                       children: [
                         FloatingActionButton(
                           onPressed: handleSaveClick,
-                          child: FaIcon(FontAwesomeIcons.heart, color: Colors.black),
+                          child: FaIcon(FontAwesomeIcons.heart,
+                              color: Colors.black),
                           backgroundColor: Colors.white,
                           elevation: 4,
                         ),
@@ -181,7 +233,8 @@ class _ShufflePageState extends State<ShufflePage> {
                           onPressed: isShuffling ? null : shuffleOutfits,
                           child: isShuffling
                               ? CircularProgressIndicator(color: Colors.black)
-                              : FaIcon(FontAwesomeIcons.shuffle, color: Colors.black),
+                              : FaIcon(FontAwesomeIcons.shuffle,
+                                  color: Colors.black),
                           backgroundColor: Colors.white,
                           elevation: 4,
                         ),

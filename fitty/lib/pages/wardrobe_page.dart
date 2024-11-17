@@ -1,8 +1,8 @@
-// pages/wardrobe_page.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
 import '../providers/wardrobe_provider.dart';
 import 'upload_dialog.dart';
 import 'favorites_page.dart';
@@ -51,7 +51,6 @@ class _WardrobePageState extends State<WardrobePage> {
         Provider.of<WardrobeProvider>(context, listen: false);
 
     if (wardrobeDataCid == null) {
-      // No wardrobe data available
       return;
     }
 
@@ -63,14 +62,47 @@ class _WardrobePageState extends State<WardrobePage> {
     }
   }
 
+  Future<File?> removeBackground(File image) async {
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('https://api.remove.bg/v1.0/removebg'),
+      );
+      request.headers['X-Api-Key'] = '3kxxPXGzn65znXteqectjDW8';
+      request.files.add(await http.MultipartFile.fromPath('image_file', image.path));
+
+      final response = await request.send();
+
+      if (response.statusCode == 200) {
+        final processedImage = File('${image.path}_processed.png');
+        await response.stream.pipe(processedImage.openWrite());
+        return processedImage;
+      } else {
+        debugPrint('Background removal failed: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('Background removal error: $e');
+      return null;
+    }
+  }
+
   Future<void> _handleUploadComplete(
       Map<String, String> uploadPayload, File image) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
+    final processedImage = await removeBackground(image);
+    if (processedImage == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Failed to process image.'),
+      ));
+      return;
+    }
+
     final String category = uploadPayload['category']!;
     String? imageCid = await _pinataService.uploadFile(
-      image,
+      processedImage,
       name: uploadPayload['subcategory'],
       keyValues: uploadPayload,
     );
@@ -84,7 +116,6 @@ class _WardrobePageState extends State<WardrobePage> {
       Provider.of<WardrobeProvider>(context, listen: false)
           .addWardrobeItem(category, newItem);
 
-      // Fetch existing wardrobe data
       Map<String, dynamic> wardrobeData = {};
       if (wardrobeDataCid != null) {
         Map<String, dynamic>? existingData =
@@ -94,13 +125,11 @@ class _WardrobePageState extends State<WardrobePage> {
         }
       }
 
-      // Update wardrobe data
       if (!wardrobeData.containsKey(category)) {
         wardrobeData[category] = [];
       }
       wardrobeData[category].add(newItem);
 
-      // Upload updated wardrobe data
       String? newWardrobeDataCid = await _pinataService.uploadJson(
         wardrobeData,
         name: 'wardrobeData.json',
@@ -136,7 +165,6 @@ class _WardrobePageState extends State<WardrobePage> {
     Provider.of<WardrobeProvider>(context, listen: false)
         .removeWardrobeItemByCid(category, cid);
 
-    // Update wardrobe data
     Map<String, dynamic> wardrobeData = {};
     if (wardrobeDataCid != null) {
       Map<String, dynamic>? existingData =
@@ -151,7 +179,6 @@ class _WardrobePageState extends State<WardrobePage> {
           .removeWhere((item) => item['cid'] == cid);
     }
 
-    // Upload updated wardrobe data
     String? newWardrobeDataCid = await _pinataService.uploadJson(
       wardrobeData,
       name: 'wardrobeData.json',
@@ -264,7 +291,7 @@ class _WardrobePageState extends State<WardrobePage> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2, // Two tabs: Wardrobe and Favorites
+      length: 2,
       child: Scaffold(
         appBar: AppBar(
           title: Text('Wardrobe'),
@@ -277,7 +304,6 @@ class _WardrobePageState extends State<WardrobePage> {
         ),
         body: TabBarView(
           children: [
-            // Wardrobe Tab Content
             Column(
               children: [
                 if (_uploadSuccessMessage != null)
@@ -314,3 +340,4 @@ class _WardrobePageState extends State<WardrobePage> {
     );
   }
 }
+
