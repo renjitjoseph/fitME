@@ -1,11 +1,14 @@
+// pages/wardrobe_page.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../providers/wardrobe_provider.dart';
 import 'upload_dialog.dart';
+import 'favorites_page.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../../services/pinata_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class WardrobePage extends StatefulWidget {
   @override
@@ -14,91 +17,106 @@ class WardrobePage extends StatefulWidget {
 
 class _WardrobePageState extends State<WardrobePage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
   String? _uploadSuccessMessage;
+  final PinataService _pinataService = PinataService();
+  String? wardrobeDataCid;
 
   @override
   void initState() {
     super.initState();
+    loadWardrobeDataCid();
     fetchWardrobeItems();
+  }
+
+  Future<void> loadWardrobeDataCid() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    setState(() {
+      wardrobeDataCid = prefs.getString('wardrobeDataCid');
+    });
+  }
+
+  Future<void> saveWardrobeDataCid(String cid) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString('wardrobeDataCid', cid);
+    setState(() {
+      wardrobeDataCid = cid;
+    });
   }
 
   Future<void> fetchWardrobeItems() async {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    final wardrobeProvider = Provider.of<WardrobeProvider>(context, listen: false);
+    final wardrobeProvider =
+        Provider.of<WardrobeProvider>(context, listen: false);
 
-    final categories = wardrobeProvider.wardrobeItems.keys;
-    for (final category in categories) {
-      final itemsRef = _storage.ref().child('wardrobe/${user.uid}/$category');
-      final listResult = await itemsRef.listAll();
+    if (wardrobeDataCid == null) {
+      // No wardrobe data available
+      return;
+    }
 
-      final items = await Future.wait(listResult.items.map((itemRef) async {
-        final url = await itemRef.getDownloadURL();
-        final fileName = itemRef.name;
+    Map<String, dynamic>? wardrobeData =
+        await _pinataService.getJson(wardrobeDataCid!);
 
-        final docSnapshot = await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .collection('wardrobe')
-            .doc(category)
-            .collection('items')
-            .where('fileName', isEqualTo: fileName)
-            .limit(1)
-            .get();
-
-        Map<String, dynamic> data = {};
-        if (docSnapshot.docs.isNotEmpty) {
-          data = docSnapshot.docs.first.data();
-        }
-
-        return {
-          ...data,
-          'url': url,
-          'fileName': fileName,
-        };
-      }).toList());
-
-      wardrobeProvider.setWardrobeItems(category, items);
+    if (wardrobeData != null) {
+      wardrobeProvider.setWardrobeItemsFromJson(wardrobeData);
     }
   }
 
-  Future<void> _handleUploadComplete(Map<String, String> uploadPayload, File image) async {
+  Future<void> _handleUploadComplete(
+      Map<String, String> uploadPayload, File image) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
     final String category = uploadPayload['category']!;
-    final String fileName = image.path.split('/').last;
-    final Reference storageRef = _storage.ref().child('wardrobe/${user.uid}/$category/$fileName');
+    String? imageCid = await _pinataService.uploadFile(
+      image,
+      name: uploadPayload['subcategory'],
+      keyValues: uploadPayload,
+    );
 
-    final uploadTask = storageRef.putFile(image);
-    final snapshot = await uploadTask.whenComplete(() {});
-    final downloadUrl = await snapshot.ref.getDownloadURL();
+    if (imageCid != null) {
+      Map<String, dynamic> newItem = {
+        'cid': imageCid,
+        ...uploadPayload,
+      };
 
-    final updatedPayload = {
-      ...uploadPayload,
-      'url': downloadUrl,
-      'fileName': fileName,
-    };
+      Provider.of<WardrobeProvider>(context, listen: false)
+          .addWardrobeItem(category, newItem);
 
-    await _firestore
-        .collection('users')
-        .doc(user.uid)
-        .collection('wardrobe')
-        .doc(category)
-        .collection('items')
-        .add(updatedPayload);
+      // Fetch existing wardrobe data
+      Map<String, dynamic> wardrobeData = {};
+      if (wardrobeDataCid != null) {
+        Map<String, dynamic>? existingData =
+            await _pinataService.getJson(wardrobeDataCid!);
+        if (existingData != null) {
+          wardrobeData = existingData;
+        }
+      }
 
-    Provider.of<WardrobeProvider>(context, listen: false)
-        .addWardrobeItem(category, updatedPayload);
+      // Update wardrobe data
+      if (!wardrobeData.containsKey(category)) {
+        wardrobeData[category] = [];
+      }
+      wardrobeData[category].add(newItem);
 
-    setState(() {
-      _uploadSuccessMessage = 'Image uploaded successfully in $category';
-    });
+      // Upload updated wardrobe data
+      String? newWardrobeDataCid = await _pinataService.uploadJson(
+        wardrobeData,
+        name: 'wardrobeData.json',
+      );
 
-    fetchWardrobeItems();
+      if (newWardrobeDataCid != null) {
+        await saveWardrobeDataCid(newWardrobeDataCid);
+        setState(() {
+          _uploadSuccessMessage = 'Image uploaded successfully in $category';
+        });
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Failed to upload image.'),
+      ));
+    }
   }
 
   void _showUploadDialog() {
@@ -112,39 +130,54 @@ class _WardrobePageState extends State<WardrobePage> {
     );
   }
 
-  Future<void> deleteFile(String category, String fileName) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    final storageRef = _storage.ref().child('wardrobe/${user.uid}/$category/$fileName');
-    await storageRef.delete();
-
-    final querySnapshot = await _firestore
-        .collection('users')
-        .doc(user.uid)
-        .collection('wardrobe')
-        .doc(category)
-        .collection('items')
-        .where('fileName', isEqualTo: fileName)
-        .get();
-
-    for (var doc in querySnapshot.docs) {
-      await doc.reference.delete();
-    }
+  Future<void> deleteFile(String category, String cid) async {
+    await _pinataService.deleteFile(cid);
 
     Provider.of<WardrobeProvider>(context, listen: false)
-        .removeWardrobeItem(category, fileName);
+        .removeWardrobeItemByCid(category, cid);
+
+    // Update wardrobe data
+    Map<String, dynamic> wardrobeData = {};
+    if (wardrobeDataCid != null) {
+      Map<String, dynamic>? existingData =
+          await _pinataService.getJson(wardrobeDataCid!);
+      if (existingData != null) {
+        wardrobeData = existingData;
+      }
+    }
+
+    if (wardrobeData.containsKey(category)) {
+      wardrobeData[category]
+          .removeWhere((item) => item['cid'] == cid);
+    }
+
+    // Upload updated wardrobe data
+    String? newWardrobeDataCid = await _pinataService.uploadJson(
+      wardrobeData,
+      name: 'wardrobeData.json',
+    );
+
+    if (newWardrobeDataCid != null) {
+      await saveWardrobeDataCid(newWardrobeDataCid);
+      setState(() {
+        _uploadSuccessMessage = 'Item deleted successfully from $category';
+      });
+    }
   }
 
   Widget buildCategory(String category) {
-    final items = Provider.of<WardrobeProvider>(context).wardrobeItems[category] ?? [];
-    final isExpanded = Provider.of<WardrobeProvider>(context).expandedCategories[category] ?? false;
+    final items =
+        Provider.of<WardrobeProvider>(context).wardrobeItems[category] ?? [];
+    final isExpanded =
+        Provider.of<WardrobeProvider>(context).expandedCategories[category] ??
+            false;
 
     return ExpansionTile(
       title: Text(category),
       initiallyExpanded: isExpanded,
       onExpansionChanged: (bool expanded) {
-        Provider.of<WardrobeProvider>(context, listen: false).toggleCategoryExpansion(category);
+        Provider.of<WardrobeProvider>(context, listen: false)
+            .toggleCategoryExpansion(category);
       },
       children: [
         GridView.builder(
@@ -165,7 +198,7 @@ class _WardrobePageState extends State<WardrobePage> {
               child: Stack(
                 children: [
                   Image.network(
-                    item['url'],
+                    'https://gateway.pinata.cloud/ipfs/${item['cid']}',
                     width: 100,
                     height: 100,
                     fit: BoxFit.cover,
@@ -175,7 +208,7 @@ class _WardrobePageState extends State<WardrobePage> {
                     child: IconButton(
                       icon: Icon(Icons.delete, color: Colors.red),
                       onPressed: () {
-                        deleteFile(category, item['fileName']);
+                        deleteFile(category, item['cid']);
                       },
                     ),
                   ),
@@ -190,14 +223,19 @@ class _WardrobePageState extends State<WardrobePage> {
 
   void _showItemDetailsDialog(Map<String, dynamic> item, String category) {
     showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text('Item Details'),
-            content: Column(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Item Details'),
+          content: SingleChildScrollView(
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Image.network(item['url'], width: 100, height: 100),
+                Image.network(
+                  'https://gateway.pinata.cloud/ipfs/${item['cid']}',
+                  width: 100,
+                  height: 100,
+                ),
                 SizedBox(height: 10),
                 Text('Category: $category'),
                 Text('Subcategory: ${item['subcategory'] ?? 'N/A'}'),
@@ -209,23 +247,24 @@ class _WardrobePageState extends State<WardrobePage> {
                 if (item['brand'] != null) Text('Brand: ${item['brand']}'),
               ],
             ),
-            actions: [
-              TextButton(
-                child: Text('Close'),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-              ),
-            ],
-          );
-        },
+          ),
+          actions: [
+            TextButton(
+              child: Text('Close'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 2, // Two tabs: Wardrobe and Favorites
       child: Scaffold(
         appBar: AppBar(
           title: Text('Wardrobe'),
@@ -238,6 +277,7 @@ class _WardrobePageState extends State<WardrobePage> {
         ),
         body: TabBarView(
           children: [
+            // Wardrobe Tab Content
             Column(
               children: [
                 if (_uploadSuccessMessage != null)
@@ -252,14 +292,18 @@ class _WardrobePageState extends State<WardrobePage> {
                   ),
                 Expanded(
                   child: ListView(
-                    children: Provider.of<WardrobeProvider>(context).wardrobeItems.keys.map((category) {
+                    children:
+                        Provider.of<WardrobeProvider>(context)
+                            .wardrobeItems
+                            .keys
+                            .map((category) {
                       return buildCategory(category);
                     }).toList(),
                   ),
                 ),
               ],
             ),
-            Center(child: Text('Favorites Page Content')),
+            FavoritesTab(),
           ],
         ),
         floatingActionButton: FloatingActionButton(

@@ -1,3 +1,4 @@
+// pages/upload_dialog.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -68,10 +69,16 @@ class _UploadDialogState extends State<UploadDialog> {
 
       // Call the onUploadComplete method to pass the data back to the WardrobePage
       widget.onUploadComplete(uploadPayload, image);
-      
+
       // Close the dialog after image selection
       Navigator.of(context).pop();
     }
+  }
+
+  @override
+  void dispose() {
+    _brandController.dispose();
+    super.dispose();
   }
 
   @override
@@ -97,7 +104,6 @@ class _UploadDialogState extends State<UploadDialog> {
               },
             ),
             SizedBox(height: 10),
-
             if (_selectedCategory != null)
               DropdownButtonFormField<String>(
                 value: _selectedSubcategory,
@@ -113,7 +119,6 @@ class _UploadDialogState extends State<UploadDialog> {
                 },
               ),
             SizedBox(height: 10),
-
             DropdownButtonFormField<String>(
               value: _selectedColor,
               hint: Text('Select Color'),
@@ -128,7 +133,6 @@ class _UploadDialogState extends State<UploadDialog> {
               },
             ),
             SizedBox(height: 10),
-
             DropdownButtonFormField<String>(
               value: _selectedMaterial,
               hint: Text('Select Material'),
@@ -143,7 +147,6 @@ class _UploadDialogState extends State<UploadDialog> {
               },
             ),
             SizedBox(height: 10),
-
             DropdownButtonFormField<String>(
               value: _selectedStyle,
               hint: Text('Select Style'),
@@ -158,7 +161,6 @@ class _UploadDialogState extends State<UploadDialog> {
               },
             ),
             SizedBox(height: 10),
-
             DropdownButtonFormField<String>(
               value: _selectedSeason,
               hint: Text('Select Season'),
@@ -173,7 +175,6 @@ class _UploadDialogState extends State<UploadDialog> {
               },
             ),
             SizedBox(height: 10),
-
             DropdownButtonFormField<String>(
               value: _selectedFit,
               hint: Text('Select Fit'),
@@ -188,7 +189,6 @@ class _UploadDialogState extends State<UploadDialog> {
               },
             ),
             SizedBox(height: 10),
-
             TextField(
               controller: _brandController,
               decoration: InputDecoration(
@@ -196,7 +196,6 @@ class _UploadDialogState extends State<UploadDialog> {
               ),
             ),
             SizedBox(height: 20),
-
             ElevatedButton(
               onPressed: _isButtonEnabled
                   ? () {

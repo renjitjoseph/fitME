@@ -35,6 +35,7 @@ class _NavigationState extends State<Navigation> {
         });
       } catch (e) {
         // Handle error if profile image does not exist
+        print('Error loading profile image: $e');
       }
     }
   }
@@ -43,7 +44,6 @@ class _NavigationState extends State<Navigation> {
     FeedPage(),
     WardrobePage(),
     ShufflePage(),
-    FavoritesPage(),
     ProfilePage(),
   ];
 
@@ -70,10 +70,6 @@ class _NavigationState extends State<Navigation> {
           BottomNavigationBarItem(
             icon: Icon(Icons.shuffle),
             label: 'Fit Me',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.favorite),
-            label: 'Favorites',
           ),
           BottomNavigationBarItem(
             icon: _profileImageUrl != null

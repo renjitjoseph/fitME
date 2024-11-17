@@ -7,11 +7,14 @@ import 'providers/shuffle_provider.dart';
 import 'providers/cached_data_provider.dart';
 import 'pages/login_page.dart';
 import 'navigation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // Import dotenv
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env"); // Load environment variables
   try {
     await Firebase.initializeApp();
+    print("Firebase initialized successfully.");
   } catch (e) {
     print('Error initializing Firebase: $e');
   }
@@ -26,7 +29,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => WardrobeProvider()),
         ChangeNotifierProvider(create: (_) => FavoritesProvider()),
         ChangeNotifierProvider(create: (_) => ShuffleProvider()),
-        ChangeNotifierProvider(create: (_) => CachedDataProvider()), // Add CachedDataProvider
+        ChangeNotifierProvider(create: (_) => CachedDataProvider()),
       ],
       child: MaterialApp(
         title: 'Fitty',

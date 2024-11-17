@@ -1,13 +1,11 @@
+// pages/shuffle_page.dart
 import 'package:flutter/material.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
-import 'package:palette_generator/palette_generator.dart';
 import '../providers/shuffle_provider.dart';
-
-enum ColorCategory { neutral, warm, cool }
+import '../providers/wardrobe_provider.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 class ShufflePage extends StatefulWidget {
   @override
@@ -22,32 +20,13 @@ class _ShufflePageState extends State<ShufflePage> {
   bool isShuffling = false;
 
   Future<Map<String, dynamic>?> fetchCategoryItems(String category) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return null;
-
-    final itemsRef = FirebaseStorage.instance.ref().child('wardrobe/${user.uid}/$category');
-    final listResult = await itemsRef.listAll();
-    final items = await Future.wait(listResult.items.map((itemRef) async {
-      final url = await itemRef.getDownloadURL();
-      final colorCategory = await getColorCategoryFromImage(url);
-      return {'url': url, 'category': category, 'colorCategory': colorCategory.toString().split('.').last};
-    }));
-    return items.isNotEmpty ? items[(items.length * (DateTime.now().millisecondsSinceEpoch % 1000) / 1000).floor()] : null;
-  }
-
-  Future<ColorCategory> getColorCategoryFromImage(String imageUrl) async {
-    final ImageProvider imageProvider = NetworkImage(imageUrl);
-    final PaletteGenerator palette = await PaletteGenerator.fromImageProvider(imageProvider);
-    return _mapColorToCategory(palette.dominantColor?.color ?? Colors.white);
-  }
-
-  ColorCategory _mapColorToCategory(Color color) {
-    if ((color.red > 200 && color.green > 200 && color.blue > 200) || (color.red < 50 && color.green < 50 && color.blue < 50)) {
-      return ColorCategory.neutral;
-    } else if ((color.red > color.green) && (color.red > color.blue)) {
-      return ColorCategory.warm;
+    final wardrobeProvider = Provider.of<WardrobeProvider>(context, listen: false);
+    final items = wardrobeProvider.wardrobeItems[category];
+    if (items != null && items.isNotEmpty) {
+      final randomIndex = DateTime.now().millisecondsSinceEpoch % items.length;
+      return items[randomIndex];
     } else {
-      return ColorCategory.cool;
+      return null;
     }
   }
 
@@ -55,9 +34,6 @@ class _ShufflePageState extends State<ShufflePage> {
     setState(() {
       isShuffling = true;
     });
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
 
     final Map<String, dynamic> newItems = {};
     for (final category in categories) {
@@ -75,34 +51,21 @@ class _ShufflePageState extends State<ShufflePage> {
   }
 
   Future<void> saveToFavorites() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    final outfitItems = Provider.of<ShuffleProvider>(context, listen: false).outfitItems;
 
-    final favoritesRef = FirebaseFirestore.instance.collection('users').doc(user.uid).collection('favorites');
-    final favoriteSnapshot = await favoritesRef.get();
-    final favoriteCount = favoriteSnapshot.size;
+    Map<String, dynamic> favoriteItem = {
+      'name': favoriteName.isNotEmpty ? favoriteName : 'Favorite',
+      'dateSaved': DateTime.now().toIso8601String(),
+      'outfitItems': outfitItems,
+    };
 
-    final name = favoriteName.isNotEmpty ? favoriteName : 'Fit ${favoriteCount + 1}';
-    final Map<String, dynamic> outfitItems = Provider.of<ShuffleProvider>(context, listen: false).outfitItems;
-
-    var itemsToSave = outfitItems.map((key, value) {
-      if (value is Map<String, dynamic> && value.containsKey('colorCategory')) {
-        var newValue = Map.of(value); // Clone the value map
-        newValue['colorCategory'] = newValue['colorCategory'].toString().split('.').last; // Convert enum to string
-        return MapEntry(key, newValue);
-      }
-      return MapEntry(key, value);
-    });
-
-    await favoritesRef.add({
-      ...itemsToSave,
-      'name': name,
-      'dateSaved': DateTime.now(),
-    }).then((value) {
-      print("Outfit saved successfully.");
-    }).catchError((error) {
-      print("Failed to save outfit: $error");
-    });
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? favoritesData = prefs.getString('favorites');
+    List<Map<String, dynamic>> favoritesList = favoritesData != null
+        ? List<Map<String, dynamic>>.from(jsonDecode(favoritesData))
+        : [];
+    favoritesList.add(favoriteItem);
+    await prefs.setString('favorites', jsonEncode(favoritesList));
 
     setState(() {
       showModal = true;
@@ -147,7 +110,7 @@ class _ShufflePageState extends State<ShufflePage> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: Image.network(
-                    item['url'],
+                    'https://gateway.pinata.cloud/ipfs/${item['cid']}',
                     width: 100,
                     height: 100,
                     fit: BoxFit.cover,
@@ -193,7 +156,7 @@ class _ShufflePageState extends State<ShufflePage> {
                   Expanded(
                     flex: 2,
                     child: Align(
-                      alignment: Alignment.center,  // Center-aligns the Column with clothing items
+                      alignment: Alignment.center,
                       child: SingleChildScrollView(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -249,7 +212,12 @@ class _ShufflePageState extends State<ShufflePage> {
                 ),
                 actions: [
                   TextButton(
-                    onPressed: saveToFavorites,
+                    onPressed: () {
+                      saveToFavorites();
+                      setState(() {
+                        showNameModal = false;
+                      });
+                    },
                     child: Text('Save'),
                   ),
                   TextButton(

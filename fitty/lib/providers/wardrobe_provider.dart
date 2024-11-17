@@ -1,3 +1,4 @@
+// providers/wardrobe_provider.dart
 import 'package:flutter/foundation.dart';
 
 class WardrobeProvider with ChangeNotifier {
@@ -21,21 +22,28 @@ class WardrobeProvider with ChangeNotifier {
 
   void toggleCategoryExpansion(String category) {
     _expandedCategories[category] = !_expandedCategories[category]!;
-    notifyListeners();  // Ensures the UI updates immediately after the toggle
+    notifyListeners();
   }
 
   void setWardrobeItems(String category, List<Map<String, dynamic>> items) {
     _wardrobeItems[category] = items;
-    notifyListeners();  // Ensures the UI updates immediately after setting items
+    notifyListeners();
+  }
+
+  void setWardrobeItemsFromJson(Map<String, dynamic> data) {
+    _wardrobeItems = data.map((key, value) {
+      return MapEntry(key, List<Map<String, dynamic>>.from(value));
+    });
+    notifyListeners();
   }
 
   void addWardrobeItem(String category, Map<String, dynamic> item) {
     _wardrobeItems[category]?.add(item);
-    notifyListeners();  // Ensures the UI updates immediately after adding an item
+    notifyListeners();
   }
 
-  void removeWardrobeItem(String category, String fileName) {
-    _wardrobeItems[category]?.removeWhere((item) => item['fileName'] == fileName);
-    notifyListeners();  // Ensures the UI updates immediately after removing an item
+  void removeWardrobeItemByCid(String category, String cid) {
+    _wardrobeItems[category]?.removeWhere((item) => item['cid'] == cid);
+    notifyListeners();
   }
 }
